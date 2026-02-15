@@ -207,6 +207,58 @@ public class SMBClient {
   public func keepAlive() async throws -> Echo.Response {
     try await session.echo()
   }
+
+  public func watch(
+    path: String,
+    filter: ChangeNotify.CompletionFilter = [.fileName, .dirName, .lastWrite],
+    flags: ChangeNotify.Flags = [.watchTree]
+  ) -> AsyncStream<[FileNotifyInformation]> {
+    AsyncStream { continuation in
+      let task = Task {
+        do {
+          let createResponse = try await session.create(
+            desiredAccess: [.readData, .readAttributes, .synchronize],
+            fileAttributes: [.directory],
+            shareAccess: [.read, .write, .delete],
+            createDisposition: .open,
+            createOptions: [.directoryFile],
+            name: Pathname.normalize(path)
+          )
+
+          // We must close the handle when we are done
+          defer {
+            Task {
+              try? await session.close(fileId: createResponse.fileId)
+            }
+          }
+
+          while !Task.isCancelled {
+            // This blocks until a change occurs or the connection is closed
+            let response = try await session.changeNotify(
+              fileId: createResponse.fileId,
+              completionFilter: filter,
+              flags: flags
+            )
+
+            let changes = response.notifyInformation()
+            if !changes.isEmpty {
+              continuation.yield(changes)
+            }
+          }
+        } catch {
+          // If we are cancelled, we expect an error, but we just finish the stream
+          if !Task.isCancelled {
+            print("SMB Watch Error: \(error)")
+          }
+        }
+        continuation.finish()
+      }
+
+      continuation.onTermination = { _ in
+        task.cancel()
+      }
+    }
+  }
 }
 
 public struct Share: Hashable {

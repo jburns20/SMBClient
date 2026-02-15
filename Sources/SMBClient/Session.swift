@@ -629,6 +629,24 @@ public class Session {
   }
 
   @discardableResult
+  public func changeNotify(
+    fileId: Data,
+    completionFilter: ChangeNotify.CompletionFilter,
+    flags: ChangeNotify.Flags = [.watchTree]
+  ) async throws -> ChangeNotify.Response {
+    let request = ChangeNotify.Request(
+      messageId: messageId.next(),
+      treeId: treeId,
+      sessionId: sessionId,
+      flags: flags,
+      fileId: fileId,
+      completionFilter: completionFilter
+    )
+
+    return try await send(request)
+  }
+
+  @discardableResult
   public func echo() async throws -> Echo.Response {
     let request = Echo.Request(
       messageId: messageId.next(),
